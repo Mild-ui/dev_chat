@@ -37,10 +37,12 @@ app.use(express.urlencoded({ extended: true }));
 // In production replace this with S3/Cloudinary and remove this line
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// ── Rate limiting ─────────────────────────────────────────────────────────────
-app.use('/api/', rateLimit({ windowMs: 15 * 60 * 1000, max: 200 }));
-app.use('/api/auth/', rateLimit({ windowMs: 15 * 60 * 1000, max: 20 }));
+// ── Trust Render's proxy ───────────────────────────────────────────────────────
+app.set('trust proxy', 1);
 
+// ── Rate limiting ─────────────────────────────────────────────────────────────
+app.use('/api/', rateLimit({ windowMs: 15 * 60 * 1000, max: 200, trustProxy: true }));
+app.use('/api/auth/', rateLimit({ windowMs: 15 * 60 * 1000, max: 20, trustProxy: true }));
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
