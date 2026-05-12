@@ -1,60 +1,38 @@
-// middleware/upload.js
-// Multer configuration for handling file uploads
-// Files are stored in /uploads/ folder on the server
-// For production, swap localStorage for S3/Cloudinary (see comments)
-
 const multer = require('multer');
-const path = require('path');
-const crypto = require('crypto');
-const fs = require('fs');
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const { v2: cloudinary } = require('cloudinary');
 
-// Ensure uploads directory exists
-const uploadDir = path.join(__dirname, '..', 'uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key:    process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
-// ── Allowed file types ────────────────────────────────────────────────────────
 const ALLOWED_TYPES = {
-  // Images
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/gif': 'gif',
-  'image/webp': 'webp',
-  // Documents
+  'image/jpeg': 'jpg', 'image/png': 'png',
+  'image/gif': 'gif',  'image/webp': 'webp',
   'application/pdf': 'pdf',
   'application/msword': 'doc',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
   'application/vnd.ms-excel': 'xls',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
-  'application/vnd.ms-powerpoint': 'ppt',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
-  // Text / Code
-  'text/plain': 'txt',
-  'text/csv': 'csv',
+  'text/plain': 'txt', 'text/csv': 'csv',
   'application/json': 'json',
-  // Archives
   'application/zip': 'zip',
   'application/x-zip-compressed': 'zip',
 };
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 
-// ── Storage: local disk ───────────────────────────────────────────────────────
-// For production with Render/Railway (ephemeral filesystems), replace this with:
-//   const { CloudinaryStorage } = require('multer-storage-cloudinary');
-//   or aws-sdk S3 multipart upload
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => {
-    // Random name to prevent collisions & directory traversal attacks
-    const random = crypto.randomBytes(16).toString('hex');
-    const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, `${Date.now()}-${random}${ext}`);
-  }
+const storage = new CloudinaryStorage({
+  cloudinary,
+  params: async (req, file) => ({
+    folder: 'devchat',
+    resource_type: file.mimetype.startsWith('image/') ? 'image' : 'raw',
+    public_id: `${Date.now()}-${Math.random().toString(36).substring(2)}`,
+  }),
 });
 
-// ── File filter ───────────────────────────────────────────────────────────────
 const fileFilter = (req, file, cb) => {
   if (ALLOWED_TYPES[file.mimetype]) {
     cb(null, true);
@@ -63,10 +41,6 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-const upload = multer({
-  storage,
-  fileFilter,
-  limits: { fileSize: MAX_FILE_SIZE }
-});
+const upload = multer({ storage, fileFilter, limits: { fileSize: MAX_FILE_SIZE } });
 
-module.exports = { upload, ALLOWED_TYPES, uploadDir };
+module.exports = { upload, ALLOWED_TYPES };
