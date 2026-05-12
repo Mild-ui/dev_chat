@@ -1,34 +1,59 @@
 // src/components/chat/MessageBubble.js
-// Renders a single message with decrypt functionality + typing indicator
-import React, { useState } from 'react';
-import { Lock, Unlock, Eye, Check, CheckCheck } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { 
+  Lock, 
+  Unlock, 
+  Eye, 
+  Check, 
+  CheckCheck, 
+  Reply, 
+  Forward, 
+  Copy, 
+  MoreVertical, 
+  Trash2 
+} from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import api from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
 
-// Simple Typing Indicator Component
-const TypingIndicator = () => (
-  <div className="flex gap-1 items-center bg-gray-800 rounded-full px-3 py-1.5 w-fit">
-    <div className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-    <div className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-    <div className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce"></div>
-  </div>
-);
-
-export default function MessageBubble({ message, isTyping }) {
+export default function MessageBubble({ 
+  message, 
+  onReply = () => {}, 
+  onForward = () => {}, 
+  onDelete = () => {} 
+}) {
   const { user } = useAuth();
   const [decrypted, setDecrypted] = useState(null);
   const [decrypting, setDecrypting] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
   
-  const isMine = message.sender_id === user.id;
+  // Refs to handle clicking outside the menu
+  const menuRef = useRef(null);
+  const buttonRef = useRef(null);
 
-  // Truncate cipher for display (first 40 chars + ...)
-  const cipherPreview = message.encrypted_message ? `${message.encrypted_message.slice(0, 40)}...` : '';
+  const isMine = message.sender_id === user.id;
+  const cipherPreview = message.encrypted_message 
+    ? `${message.encrypted_message.slice(0, 40)}...` 
+    : '';
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (
+        menuRef.current && !menuRef.current.contains(event.target) &&
+        buttonRef.current && !buttonRef.current.contains(event.target)
+      ) {
+        setShowMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   async function handleDecrypt() {
     if (decrypted) {
-      setDecrypted(null); // Toggle off
+      setDecrypted(null);
       return;
     }
     setDecrypting(true);
@@ -42,60 +67,136 @@ export default function MessageBubble({ message, isTyping }) {
     }
   }
 
+  const copyToClipboard = () => {
+    const textToCopy = decrypted || message.encrypted_message;
+    navigator.clipboard.writeText(textToCopy);
+    toast.success('Copied to clipboard');
+    setShowMenu(false);
+  };
+
   const time = format(new Date(message.timestamp), 'HH:mm');
 
   return (
-    <div className={`flex flex-col ${isMine ? 'items-end' : 'items-start'} mb-3`}>
-      {/* 1. The Actual Message Bubble */}
-      <div className={`max-w-[75%] ${isMine ? 'items-end' : 'items-start'} flex flex-col`}>
-        <div className={`rounded-2xl px-4 py-3 ${
-          isMine ? 'bg-indigo-600 rounded-br-sm' : 'bg-gray-800 border border-gray-700 rounded-bl-sm'
-        }`}>
-          {/* Encrypted label */}
-          <div className={`flex items-center gap-1.5 mb-2 ${isMine ? 'text-indigo-200' : 'text-gray-500'}`}>
-            <Lock size={11} />
-            <span className="text-xs font-mono">AES-256 ENCRYPTED</span>
+    <div className={`flex ${isMine ? 'justify-end' : 'justify-start'} mb-4 group relative w-full px-4`}>
+      <div className={`max-w-[80%] md:max-w-[70%] ${isMine ? 'items-end' : 'items-start'} flex flex-col relative`}>
+        
+        {/* Reply Reference Header (if this message is a reply) */}
+        {message.reply_to_content && (
+          <div className="flex items-center gap-2 mb-1 text-xs text-gray-500 bg-gray-900/30 px-2 py-1 rounded-t-lg border-l-2 border-indigo-500">
+            <Reply size={12} />
+            <span className="truncate max-w-[200px] italic">
+              {message.reply_to_content}
+            </span>
           </div>
+        )}
+
+        <div className={`flex items-center gap-2 ${isMine ? 'flex-row' : 'flex-row-reverse'}`}>
           
-          {/* Message content */}
-          {decrypted ? (
-            <div>
-              <div className={`flex items-center gap-1 mb-1 ${isMine ? 'text-green-300' : 'text-green-400'}`}>
-                <Unlock size={11} />
-                <span className="text-xs font-mono">DECRYPTED</span>
-              </div>
-              <p className="text-white text-sm leading-relaxed break-words">{decrypted}</p>
+          {/* Action Trigger - Three Dots */}
+          <button 
+            ref={buttonRef}
+            onClick={() => setShowMenu(!showMenu)}
+            className={`p-1.5 rounded-full hover:bg-gray-800 text-gray-500 hover:text-white transition-opacity duration-200 ${
+              showMenu ? 'opacity-100 bg-gray-800' : 'opacity-0 group-hover:opacity-100'
+            }`}
+          >
+            <MoreVertical size={18} />
+          </button>
+
+          {/* Main Message Bubble */}
+          <div className={`relative rounded-2xl px-4 py-3 shadow-sm ${
+            isMine 
+              ? 'bg-indigo-600 text-white rounded-br-none' 
+              : 'bg-gray-800 border border-gray-700 text-gray-100 rounded-bl-none'
+          }`}>
+            {/* Header: Encryption Tag */}
+            <div className={`flex items-center gap-1.5 mb-1.5 ${isMine ? 'text-indigo-200' : 'text-gray-500'}`}>
+              <Lock size={10} />
+              <span className="text-[10px] font-mono tracking-wider uppercase">AES-256</span>
             </div>
-          ) : (
-            <p className={`text-xs font-mono break-all leading-relaxed ${isMine ? 'text-indigo-200/70' : 'text-gray-600'}`}>
-              {cipherPreview}
-            </p>
+
+            {/* Content Area */}
+            {decrypted ? (
+              <div className="animate-in fade-in duration-300">
+                <div className={`flex items-center gap-1 mb-1 ${isMine ? 'text-green-300' : 'text-green-400'}`}>
+                  <Unlock size={10} />
+                  <span className="text-[10px] font-mono">DECRYPTED</span>
+                </div>
+                <p className="text-sm leading-relaxed break-words">{decrypted}</p>
+              </div>
+            ) : (
+              <p className={`text-xs font-mono break-all leading-relaxed ${isMine ? 'text-indigo-100/60' : 'text-gray-500'}`}>
+                {cipherPreview}
+              </p>
+            )}
+          </div>
+
+          {/* Floating Context Menu */}
+          {showMenu && (
+            <div 
+              ref={menuRef}
+              className={`absolute z-50 bottom-full mb-2 bg-[#1a1d21] border border-gray-700 rounded-xl shadow-2xl p-1.5 flex flex-col min-w-[150px] animate-in zoom-in-95 duration-100 ${
+                isMine ? 'right-10' : 'left-20'
+              }`}
+            >
+              <button 
+                onClick={() => { onReply(message); setShowMenu(false); }}
+                className="flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:bg-indigo-600 hover:text-white rounded-lg transition-colors"
+              >
+                <Reply size={16} /> Reply
+              </button>
+              <button 
+                onClick={() => { onForward(message); setShowMenu(false); }}
+                className="flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 rounded-lg transition-colors"
+              >
+                <Forward size={16} /> Forward
+              </button>
+              <button 
+                onClick={copyToClipboard}
+                className="flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 rounded-lg transition-colors"
+              >
+                <Copy size={16} /> Copy
+              </button>
+              <div className="h-[1px] bg-gray-700 my-1 mx-1" />
+              <button 
+                onClick={() => { onDelete(message.id); setShowMenu(false); }}
+                className="flex items-center gap-3 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+              >
+                <Trash2 size={16} /> Delete
+              </button>
+            </div>
           )}
         </div>
 
-        {/* Footer: decrypt button + timestamp + read status */}
-        <div className={`flex items-center gap-2 mt-1 ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
-          <button onClick={handleDecrypt} disabled={decrypting} className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition font-mono ${
-            decrypted ? 'border-green-500/40 text-green-400 hover:bg-green-500/10' : 'border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-500'
-          } disabled:opacity-50`}>
-            <Eye size={10} />
+        {/* Footer: Decrypt Toggle, Time, and Status */}
+        <div className={`flex items-center gap-3 mt-1.5 px-1 ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
+          <button 
+            onClick={handleDecrypt} 
+            disabled={decrypting}
+            className={`text-[10px] font-bold uppercase tracking-tighter transition-colors ${
+              decrypted 
+                ? 'text-green-500 hover:text-green-400' 
+                : 'text-gray-500 hover:text-indigo-400'
+            }`}
+          >
             {decrypting ? '...' : decrypted ? 'Hide' : 'Decrypt'}
           </button>
-          <span className="text-gray-600 text-xs">{time}</span>
+          
+          <span className="text-gray-600 text-[10px] tabular-nums">
+            {time}
+          </span>
+
           {isMine && (
-            <span className="text-xs">
-              {message.is_read ? <CheckCheck size={12} className="text-indigo-400" /> : <Check size={12} className="text-gray-600" /> }
+            <span className="flex items-center">
+              {message.is_read 
+                ? <CheckCheck size={13} className="text-indigo-400" /> 
+                : <Check size={13} className="text-gray-600" /> 
+              }
             </span>
           )}
         </div>
-      </div>
 
-      {/* 2. Typing Indicator - Shows only if isTyping is true and it's not the user's message */}
-      {!isMine && isTyping && (
-        <div className="mt-1">
-          <TypingIndicator />
-        </div>
-      )}
+      </div>
     </div>
   );
 }

@@ -1,8 +1,6 @@
 // src/components/chat/ChatWindow.js
-// The main conversation area
-
 import React, { useEffect, useRef, useState } from 'react';
-import { Shield, Wifi, WifiOff } from 'lucide-react';
+import { Shield, Wifi, WifiOff, X, Reply as ReplyIcon } from 'lucide-react';
 import MessageBubble from './MessageBubble';
 import MessageInput from './MessageInput';
 import Avatar from '../ui/Avatar';
@@ -13,6 +11,7 @@ export default function ChatWindow({ chatUser, socket, onlineUsers, currentUserI
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [typingUser, setTypingUser] = useState(false);
+  const [replyTo, setReplyTo] = useState(null); // New state for replying
   const bottomRef = useRef(null);
   const isOnline = onlineUsers.includes(chatUser?.id);
 
@@ -21,6 +20,7 @@ export default function ChatWindow({ chatUser, socket, onlineUsers, currentUserI
     if (!chatUser) return;
     setLoading(true);
     setMessages([]);
+    setReplyTo(null); // Clear reply when switching chats
 
     api.get(`/api/messages/${chatUser.id}`)
       .then(({ data }) => setMessages(data))
@@ -33,13 +33,11 @@ export default function ChatWindow({ chatUser, socket, onlineUsers, currentUserI
     if (!socket || !chatUser) return;
 
     function onNewMessage(msg) {
-      // Only add if this message is in the current conversation
       if (
         (msg.sender_id === chatUser.id && msg.receiver_id === currentUserId) ||
         (msg.sender_id === currentUserId && msg.receiver_id === chatUser.id)
       ) {
         setMessages(prev => {
-          // Avoid duplicates
           if (prev.find(m => m.id === msg.id)) return prev;
           return [...prev, msg];
         });
@@ -66,8 +64,6 @@ export default function ChatWindow({ chatUser, socket, onlineUsers, currentUserI
     socket.on('user_typing', onTyping);
     socket.on('user_stopped_typing', onStoppedTyping);
     socket.on('messages_seen', onSeen);
-
-    // Mark as read
     socket.emit('messages_read', { senderId: chatUser.id });
 
     return () => {
@@ -78,22 +74,42 @@ export default function ChatWindow({ chatUser, socket, onlineUsers, currentUserI
     };
   }, [socket, chatUser, currentUserId]);
 
-  // Scroll to bottom when messages change
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, typingUser]);
+
+  // ── Message Actions ────────────────────────────────────────────────────────
+  const handleReply = (message) => {
+    setReplyTo(message);
+  };
+
+  const handleForward = (message) => {
+    // Logic for opening a contact selector could go here
+    toast.success('Forwarding feature coming soon');
+  };
+
+  const handleDelete = async (messageId) => {
+    try {
+      await api.delete(`/api/messages/${messageId}`);
+      setMessages(prev => prev.filter(m => m.id !== messageId));
+      toast.success('Message deleted');
+    } catch (err) {
+      toast.error('Could not delete message');
+    }
+  };
 
   // ── Send message ────────────────────────────────────────────────────────────
   async function handleSend(plaintext) {
     try {
       const { data: newMsg } = await api.post('/api/messages/send', {
         receiverId: chatUser.id,
-        plaintext
+        plaintext,
+        replyToId: replyTo?.id // Send the ID of the message being replied to
       });
 
       setMessages(prev => [...prev, newMsg]);
+      setReplyTo(null); // Clear reply preview after sending
 
-      // Notify receiver via Socket.IO for real-time delivery
       socket?.emit('deliver_message', {
         message: newMsg,
         receiverId: chatUser.id
@@ -115,19 +131,14 @@ export default function ChatWindow({ chatUser, socket, onlineUsers, currentUserI
         <div className="text-center">
           <div className="text-6xl mb-4">🔒</div>
           <h2 className="text-gray-400 font-mono text-lg">Select a chat to begin</h2>
-          <p className="text-gray-600 text-sm mt-2">All messages are AES-256 encrypted</p>
-          <div className="mt-4 flex items-center gap-2 justify-center text-green-400 text-xs font-mono">
-            <Shield size={14} />
-            <span>End-to-end encrypted</span>
-          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-gray-950 min-h-0">
-      {/* Chat header */}
+    <div className="flex-1 flex flex-col bg-gray-950 min-h-0 relative">
+      {/* Header */}
       <div className="px-6 py-4 border-b border-gray-800 bg-gray-900 flex items-center gap-3">
         <Avatar user={chatUser} size="md" showStatus isOnline={isOnline} />
         <div className="flex-1">
@@ -143,55 +154,47 @@ export default function ChatWindow({ chatUser, socket, onlineUsers, currentUserI
             )}
           </div>
         </div>
-        {/* Encryption badge */}
-        <div className="flex items-center gap-1.5 bg-green-500/10 border border-green-500/20 rounded-full px-3 py-1">
-          <Shield size={12} className="text-green-400" />
-          <span className="text-green-400 text-xs font-mono">AES-256</span>
-        </div>
       </div>
 
-      {/* Messages */}
+      {/* Messages List */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1">
         {loading ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-gray-600 font-mono text-sm animate-pulse">Loading messages...</div>
-          </div>
-        ) : messages.length === 0 ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <div className="text-4xl mb-3">💬</div>
-              <p className="text-gray-600 font-mono text-sm">No messages yet</p>
-              <p className="text-gray-700 text-xs mt-1">Say hello! Messages are encrypted automatically.</p>
-            </div>
+          <div className="flex items-center justify-center h-full text-gray-600 font-mono text-sm animate-pulse">
+            Loading messages...
           </div>
         ) : (
           messages.map(msg => (
-            <MessageBubble key={msg.id} message={msg} />
+            <MessageBubble 
+              key={msg.id} 
+              message={msg} 
+              onReply={handleReply}
+              onForward={handleForward}
+              onDelete={handleDelete}
+            />
           ))
         )}
-
-        {/* Typing indicator */}
-        {typingUser && (
-          <div className="flex items-center gap-2 px-2">
-            <Avatar user={chatUser} size="sm" />
-            <div className="bg-gray-800 rounded-2xl rounded-bl-sm px-4 py-2">
-              <div className="flex gap-1">
-                {[0, 1, 2].map(i => (
-                  <span
-                    key={i}
-                    className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce"
-                    style={{ animationDelay: `${i * 150}ms` }}
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
+      {/* Reply Preview Bar */}
+      {replyTo && (
+        <div className="px-4 py-2 bg-gray-900 border-t border-gray-800 flex items-center justify-between animate-in slide-in-from-bottom-2">
+          <div className="flex items-center gap-3 border-l-2 border-indigo-500 pl-3">
+            <ReplyIcon size={14} className="text-indigo-500" />
+            <div className="flex flex-col">
+              <span className="text-xs text-indigo-400 font-bold">Replying to message</span>
+              <p className="text-xs text-gray-400 truncate max-w-md">
+                {replyTo.encrypted_message.slice(0, 50)}...
+              </p>
+            </div>
+          </div>
+          <button onClick={() => setReplyTo(null)} className="p-1 hover:bg-gray-800 rounded-full text-gray-500">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
+      {/* Input Field */}
       <MessageInput
         onSend={handleSend}
         onTyping={handleTyping}
