@@ -25,7 +25,7 @@ devchat/
 │   ├── schema.sql             # MySQL table definitions
 │   ├── server.js              # Express entry point
 │   ├── Dockerfile
-│   └── .env.example
+│   └── .env
 │
 ├── frontend/
 │   ├── src/
