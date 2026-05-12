@@ -35,7 +35,12 @@ app.use(express.urlencoded({ extended: true }));
 // ── Serve uploaded files statically ──────────────────────────────────────────
 // Files saved by multer in /uploads/ are served at GET /uploads/:filename
 // In production replace this with S3/Cloudinary and remove this line
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+const fs = require('fs');
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+  console.log('📁 Created uploads directory');
+}
 
 // ── Trust Render's proxy ───────────────────────────────────────────────────────
 app.set('trust proxy', 1);
