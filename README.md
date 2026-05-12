@@ -47,7 +47,7 @@ devchat/
 │   │       ├── api.js               # Axios instance + JWT interceptor
 │   │       └── socket.js            # Socket.IO singleton
 │   ├── Dockerfile
-│   └── .env.example
+│   └── .env
 │
 └── docker-compose.yml         # Run everything locally
 ```
