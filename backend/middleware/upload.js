@@ -21,10 +21,6 @@ const ALLOWED_TYPES = {
   'application/zip': 'zip',
   'application/x-zip-compressed': 'zip',
 };
-const multer = require('multer');
-const cloudinary = require('cloudinary').v2;
-// Use curly braces to import the correct constructor class
-const { CloudinaryStorage } = require('multer-storage-cloudinary'); 
 
 // 1. Configure Cloudinary
 cloudinary.config({
