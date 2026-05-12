@@ -21,23 +21,45 @@ const pool = mysql.createPool({
   })
 });
 
-// Auto-migrate missing columns on startup
 async function migrateDB() {
   const migrations = [
-    `ALTER TABLE messages ADD COLUMN IF NOT EXISTS message_type ENUM('text','image','file') NOT NULL DEFAULT 'text'`,
-    `ALTER TABLE messages ADD COLUMN IF NOT EXISTS file_url VARCHAR(500) NULL`,
-    `ALTER TABLE messages ADD COLUMN IF NOT EXISTS file_name VARCHAR(255) NULL`,
-    `ALTER TABLE messages ADD COLUMN IF NOT EXISTS file_size INT UNSIGNED NULL`,
-    `ALTER TABLE messages ADD COLUMN IF NOT EXISTS file_mime_type VARCHAR(100) NULL`,
-    `ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_id INT UNSIGNED NULL`,
+    {
+      check: `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='messages' AND COLUMN_NAME='message_type'`,
+      sql: `ALTER TABLE messages ADD COLUMN message_type ENUM('text','image','file') NOT NULL DEFAULT 'text'`
+    },
+    {
+      check: `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='messages' AND COLUMN_NAME='file_url'`,
+      sql: `ALTER TABLE messages ADD COLUMN file_url VARCHAR(500) NULL`
+    },
+    {
+      check: `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='messages' AND COLUMN_NAME='file_name'`,
+      sql: `ALTER TABLE messages ADD COLUMN file_name VARCHAR(255) NULL`
+    },
+    {
+      check: `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='messages' AND COLUMN_NAME='file_size'`,
+      sql: `ALTER TABLE messages ADD COLUMN file_size INT UNSIGNED NULL`
+    },
+    {
+      check: `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='messages' AND COLUMN_NAME='file_mime_type'`,
+      sql: `ALTER TABLE messages ADD COLUMN file_mime_type VARCHAR(100) NULL`
+    },
+    {
+      check: `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='messages' AND COLUMN_NAME='reply_to_id'`,
+      sql: `ALTER TABLE messages ADD COLUMN reply_to_id INT UNSIGNED NULL`
+    },
   ];
 
-  for (const sql of migrations) {
+  for (const migration of migrations) {
     try {
-      await pool.query(sql);
-      console.log('✅ Migration OK:', sql.substring(0, 60));
+      const [rows] = await pool.query(migration.check);
+      if (rows.length === 0) {
+        await pool.query(migration.sql);
+        console.log('✅ Migration applied:', migration.sql.substring(0, 60));
+      } else {
+        console.log('⏭️  Already exists, skipping:', migration.sql.substring(0, 60));
+      }
     } catch (err) {
-      console.log('⚠️  Migration skipped:', err.message);
+      console.error('❌ Migration error:', err.message);
     }
   }
 }
