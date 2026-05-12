@@ -1,7 +1,7 @@
 -- ============================================================
--- DevChat Database Schema
+-- DevChat Database Schema — v2 (with replies + file sharing)
 -- MySQL 8.0+ compatible
--- Run this file to set up your database
+-- Run: mysql -u root -p < backend/schema.sql
 -- ============================================================
 
 CREATE DATABASE IF NOT EXISTS devchat
@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS users (
   id            INT UNSIGNED    NOT NULL AUTO_INCREMENT,
   username      VARCHAR(30)     NOT NULL,
   email         VARCHAR(255)    NOT NULL,
-  password_hash VARCHAR(255)    NOT NULL,       -- bcrypt hash, NEVER plaintext
+  password_hash VARCHAR(255)    NOT NULL,
   avatar_color  VARCHAR(7)      NOT NULL DEFAULT '#6366f1',
   is_online     TINYINT(1)      NOT NULL DEFAULT 0,
   last_seen     DATETIME        NULL,
@@ -28,7 +28,6 @@ CREATE TABLE IF NOT EXISTS users (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ─── chats ────────────────────────────────────────────────────────────────────
--- Tracks unique 1-to-1 chat pairs (optional meta table for future group chats)
 CREATE TABLE IF NOT EXISTS chats (
   id            INT UNSIGNED    NOT NULL AUTO_INCREMENT,
   user1_id      INT UNSIGNED    NOT NULL,
@@ -42,31 +41,36 @@ CREATE TABLE IF NOT EXISTS chats (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ─── messages ────────────────────────────────────────────────────────────────
--- Core message table. Plaintext is NEVER stored here.
--- encrypted_message = AES-256-CBC ciphertext (hex)
--- encryption_iv     = random 16-byte IV used during encryption (hex)
--- The IV must accompany the ciphertext for decryption to work.
+-- reply_to_id  → self-referencing FK for threaded replies
+-- message_type → 'text' | 'image' | 'file'
+-- file_*       → metadata for attachments (stored in /uploads/ folder)
 CREATE TABLE IF NOT EXISTS messages (
   id                INT UNSIGNED    NOT NULL AUTO_INCREMENT,
   sender_id         INT UNSIGNED    NOT NULL,
   receiver_id       INT UNSIGNED    NOT NULL,
-  encrypted_message TEXT            NOT NULL,   -- AES-256-CBC hex ciphertext
-  encryption_iv     VARCHAR(32)     NOT NULL,   -- 16-byte IV as 32-char hex
+  encrypted_message TEXT            NULL,
+  encryption_iv     VARCHAR(32)     NULL,
+  message_type      ENUM('text','image','file') NOT NULL DEFAULT 'text',
+  file_url          VARCHAR(500)    NULL,
+  file_name         VARCHAR(255)    NULL,
+  file_size         INT UNSIGNED    NULL,
+  file_mime_type    VARCHAR(100)    NULL,
+  reply_to_id       INT UNSIGNED    NULL,
   timestamp         DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
   is_read           TINYINT(1)      NOT NULL DEFAULT 0,
 
   PRIMARY KEY (id),
   FOREIGN KEY (sender_id)   REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (reply_to_id) REFERENCES messages(id) ON DELETE SET NULL,
 
-  -- Speeds up fetching conversation between two users
   INDEX idx_msg_conversation (sender_id, receiver_id, timestamp),
   INDEX idx_msg_receiver     (receiver_id, is_read),
-  INDEX idx_msg_timestamp    (timestamp DESC)
+  INDEX idx_msg_timestamp    (timestamp DESC),
+  INDEX idx_msg_reply        (reply_to_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ─── Seed demo users (optional, remove in production) ────────────────────────
--- Passwords are both "password123" (bcrypt hash)
+-- ─── Seed demo users (password = "password123") ──────────────────────────────
 INSERT IGNORE INTO users (username, email, password_hash, avatar_color) VALUES
-('alice_dev',  'alice@demo.com',  '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/lewohFvqBDpVGbLuS', '#6366f1'),
-('bob_dev',    'bob@demo.com',    '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/lewohFvqBDpVGbLuS', '#14b8a6');
+('alice_dev', 'alice@demo.com', '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/lewohFvqBDpVGbLuS', '#6366f1'),
+('bob_dev',   'bob@demo.com',   '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/lewohFvqBDpVGbLuS', '#14b8a6');

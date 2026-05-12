@@ -1,10 +1,8 @@
 // server.js
-// Main entry point for DevChat backend
-// Express + Socket.IO + MySQL
-
 require('dotenv').config();
 const express = require('express');
 const http = require('http');
+const path = require('path');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -17,7 +15,6 @@ const messageRoutes = require('./routes/messages');
 const app = express();
 const server = http.createServer(app);
 
-// ── Socket.IO setup ──────────────────────────────────────────────────────────
 const io = new Server(server, {
   cors: {
     origin: process.env.FRONTEND_URL || 'http://localhost:3000',
@@ -26,8 +23,8 @@ const io = new Server(server, {
   }
 });
 
-// ── Security middleware ──────────────────────────────────────────────────────
-app.use(helmet()); // Sets secure HTTP headers
+// ── Security ──────────────────────────────────────────────────────────────────
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:3000',
   credentials: true
@@ -35,55 +32,45 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Rate limiting: 100 requests per 15 minutes per IP
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  message: { error: 'Too many requests, please try again later' }
-});
-app.use('/api/', limiter);
+// ── Serve uploaded files statically ──────────────────────────────────────────
+// Files saved by multer in /uploads/ are served at GET /uploads/:filename
+// In production replace this with S3/Cloudinary and remove this line
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Stricter rate limit for auth routes (prevent brute force)
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  message: { error: 'Too many login attempts' }
-});
-app.use('/api/auth/', authLimiter);
+// ── Rate limiting ─────────────────────────────────────────────────────────────
+app.use('/api/', rateLimit({ windowMs: 15 * 60 * 1000, max: 200 }));
+app.use('/api/auth/', rateLimit({ windowMs: 15 * 60 * 1000, max: 20 }));
 
-// ── Health check ─────────────────────────────────────────────────────────────
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
+// ── Health check ──────────────────────────────────────────────────────────────
+app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
-// ── API Routes ───────────────────────────────────────────────────────────────
+// ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/messages', messageRoutes);
 
-// ── 404 handler ──────────────────────────────────────────────────────────────
-app.use('*', (req, res) => {
-  res.status(404).json({ error: 'Route not found' });
-});
-
-// ── Global error handler ──────────────────────────────────────────────────────
+// ── Error handler ─────────────────────────────────────────────────────────────
 app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
+  // Multer errors (file size, type)
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(413).json({ error: 'File too large (max 20MB)' });
+  }
+  if (err.message?.includes('not allowed')) {
+    return res.status(415).json({ error: err.message });
+  }
+  console.error(err);
   res.status(500).json({ error: 'Internal server error' });
 });
 
-// ── Initialize Socket.IO ─────────────────────────────────────────────────────
+// ── Socket.IO ─────────────────────────────────────────────────────────────────
 initSocket(io);
 
-// ── Start server ─────────────────────────────────────────────────────────────
+// ── Start ─────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 5000;
-
 async function start() {
   await testConnection();
   server.listen(PORT, () => {
-    console.log(`🚀 DevChat server running on port ${PORT}`);
-    console.log(`📡 Socket.IO ready`);
-    console.log(`🔒 AES-256 encryption active`);
+    console.log(`🚀 DevChat running on port ${PORT}`);
+    console.log(`📁 File uploads → /uploads/`);
   });
 }
-
 start().catch(console.error);

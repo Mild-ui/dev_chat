@@ -133,9 +133,17 @@ export default function Sidebar({ chats, users, selectedChat, onSelectChat, onNe
 }
 
 function ChatItem({ chat, isSelected, isOnline, onClick }) {
-  const lastMsg = chat.last_message
-    ? `🔒 ${chat.last_message.slice(0, 20)}...`
-    : 'No messages yet';
+  // Build last message preview — handle text (encrypted), image, and file messages
+  function getLastMsg() {
+    const type = chat.last_message_type;
+    if (type === 'image') return `📷 ${chat.last_file_name || 'Image'}`;
+    if (type === 'file')  return `📎 ${chat.last_file_name || 'File'}`;
+    if (type === 'text' && chat.last_message) return `🔒 ${chat.last_message.slice(0, 22)}...`;
+    // Fallback: if there IS a timestamp a message exists, just show generic label
+    if (chat.last_message_time) return '🔒 Encrypted message';
+    return 'No messages yet';
+  }
+  const lastMsg = getLastMsg();
 
   const time = chat.last_message_time
     ? formatDistanceToNow(new Date(chat.last_message_time), { addSuffix: true })

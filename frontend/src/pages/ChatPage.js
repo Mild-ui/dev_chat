@@ -1,5 +1,4 @@
 // src/pages/ChatPage.js
-// Main page: fetches chats/users, manages socket, renders sidebar + chat window
 
 import React, { useEffect, useState, useCallback } from 'react';
 import Sidebar from '../components/chat/Sidebar';
@@ -18,12 +17,15 @@ export default function ChatPage() {
   const [socket, setSocket] = useState(null);
   const [mobileShowChat, setMobileShowChat] = useState(false);
 
-  // ── Initialize Socket.IO ────────────────────────────────────────────────────
+  // Total unread across ALL chats — drives the tab badge
+  const totalUnread = chats.reduce((sum, c) => sum + (c.unread_count || 0), 0);
+
+  // ── Socket setup ──────────────────────────────────────────────────────────
   useEffect(() => {
     const s = getSocket(token);
     setSocket(s);
 
-    s.on('online_users', (ids) => setOnlineUsers(ids));
+    s.on('online_users', ids => setOnlineUsers(ids));
     s.on('user_status_change', ({ userId, status }) => {
       setOnlineUsers(prev =>
         status === 'online'
@@ -32,7 +34,7 @@ export default function ChatPage() {
       );
     });
 
-    // Refresh chat list on new message (to update last message + unread count)
+    // Refresh sidebar on new message for unread count + last message preview
     s.on('new_message', () => fetchChats());
 
     return () => {
@@ -42,34 +44,32 @@ export default function ChatPage() {
     };
   }, [token]);
 
-  // ── Fetch data ─────────────────────────────────────────────────────────────
+  // ── Data fetching ─────────────────────────────────────────────────────────
   const fetchChats = useCallback(async () => {
     try {
       const { data } = await api.get('/api/messages/chats');
       setChats(data);
-    } catch (err) {
+    } catch {
       toast.error('Failed to load chats');
     }
   }, []);
 
   useEffect(() => {
     fetchChats();
-    api.get('/api/messages/users')
-      .then(({ data }) => setAllUsers(data))
-      .catch(() => {});
+    api.get('/api/messages/users').then(({ data }) => setAllUsers(data)).catch(() => {});
   }, [fetchChats]);
 
   function handleSelectChat(chatUser) {
     setSelectedChat(chatUser);
     setMobileShowChat(true);
-    // Refresh chats to clear unread count
-    setTimeout(fetchChats, 1000);
+    // Clear unread count in sidebar immediately
+    setChats(prev => prev.map(c => c.id === chatUser.id ? { ...c, unread_count: 0 } : c));
+    setTimeout(fetchChats, 1200);
   }
 
   function handleNewChat(newUser) {
     setSelectedChat(newUser);
     setMobileShowChat(true);
-    // Add to chats list if not already there
     if (!chats.find(c => c.id === newUser.id)) {
       setChats(prev => [{ ...newUser, unread_count: 0 }, ...prev]);
     }
@@ -77,7 +77,7 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-screen bg-gray-950 overflow-hidden">
-      {/* Sidebar — hidden on mobile when chat is open */}
+      {/* Sidebar */}
       <div className={`${mobileShowChat ? 'hidden md:flex' : 'flex'} w-full md:w-80 flex-shrink-0`}>
         <Sidebar
           chats={chats}
@@ -89,15 +89,14 @@ export default function ChatPage() {
         />
       </div>
 
-      {/* Chat window — hidden on mobile when no chat selected */}
+      {/* Chat window */}
       <div className={`${!mobileShowChat ? 'hidden md:flex' : 'flex'} flex-1 min-w-0 flex-col`}>
-        {/* Mobile back button */}
         {mobileShowChat && (
           <button
             onClick={() => setMobileShowChat(false)}
-            className="md:hidden flex items-center gap-2 px-4 py-2 bg-gray-900 border-b border-gray-800 text-gray-400 text-sm font-mono"
+            className="md:hidden flex items-center gap-2 px-4 py-2.5 bg-gray-900 border-b border-gray-800 text-gray-400 text-sm font-mono"
           >
-            ← Back to chats
+            ← Back
           </button>
         )}
         <ChatWindow
@@ -105,6 +104,7 @@ export default function ChatPage() {
           socket={socket}
           onlineUsers={onlineUsers}
           currentUserId={user?.id}
+          totalUnread={totalUnread}
         />
       </div>
     </div>
