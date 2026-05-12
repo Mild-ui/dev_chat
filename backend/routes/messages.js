@@ -5,7 +5,8 @@ const express = require('express');
 const path = require('path');
 const { body, param, validationResult } = require('express-validator');
 const { pool } = require('../config/database');
-const { encryptMessage, decryptMessage } = require('../utils/encryption');
+const { encryptMessage, decryptMessage, encryptFile, decryptFile } = require('../utils/encryption');
+const fs = require('fs');
 const authMiddleware = require('../middleware/auth');
 const { upload } = require('../middleware/upload');
 
@@ -166,14 +167,27 @@ router.post('/send', [
 
     res.status(201).json(newMsg[0]);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    // Log the FULL error so it appears in Render logs
+    console.error('SEND ERROR:', err.message, err.code, err.sqlMessage || '');
+    res.status(500).json({ 
+      error: 'Server error', 
+      detail: err.message,   // visible in browser console for debugging
+      code: err.code 
+    });
   }
 });
 
 // ─── POST /api/messages/upload ───────────────────────────────────────────────
-// Upload a file (image, doc, etc.) as a message
-// Uses multer middleware — handles multipart/form-data
+// Upload a file — AES-256 encrypts the bytes before saving to disk.
+// The raw file is NEVER stored. Only the .enc version is kept.
+//
+// FLOW:
+//  1. Multer saves the raw file temporarily to /uploads/
+//  2. We read the bytes, encrypt them, overwrite the file with .enc bytes
+//  3. DB stores: filename, IV, mime type (so we can decrypt + serve later)
+//  4. Receiver sees a locked file bubble
+//  5. Receiver clicks "Decrypt & View/Download"
+//     → POST /api/messages/decrypt-file → server decrypts → streams file back
 router.post('/upload', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file provided' });
 
@@ -184,20 +198,29 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     const [receiver] = await pool.execute('SELECT id FROM users WHERE id = ?', [receiverId]);
     if (receiver.length === 0) return res.status(404).json({ error: 'Receiver not found' });
 
-    // Determine message_type: 'image' for images, 'file' for everything else
+    // Read the raw uploaded file
+    const rawBuffer = fs.readFileSync(req.file.path);
+
+    // Encrypt file bytes with AES-256-CBC
+    const { encryptedBuffer, iv } = encryptFile(rawBuffer);
+
+    // Overwrite the saved file with encrypted bytes
+    fs.writeFileSync(req.file.path, encryptedBuffer);
+
     const isImage = req.file.mimetype.startsWith('image/');
     const msgType = isImage ? 'image' : 'file';
 
     const [result] = await pool.execute(
       `INSERT INTO messages
-         (sender_id, receiver_id, message_type, file_url, file_name, file_size, file_mime_type, reply_to_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+         (sender_id, receiver_id, message_type, file_url, file_name, file_size, file_mime_type, encryption_iv, reply_to_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         req.user.id, receiverId, msgType,
-        req.file.filename,           // stored filename (random)
-        req.file.originalname,       // original name shown to user
+        req.file.filename,        // encrypted file stored on disk
+        req.file.originalname,    // original name shown to user
         req.file.size,
         req.file.mimetype,
+        iv,                       // IV needed to decrypt later
         replyToId || null
       ]
     );
@@ -213,14 +236,60 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       WHERE m.id = ?
     `, [result.insertId]);
 
-    // Build absolute URL
     const msg = newMsg[0];
-    msg.file_url = `${req.protocol}://${req.get('host')}/uploads/${msg.file_url}`;
+    // Don't expose the raw file URL — access only via /decrypt-file
+    msg.file_url = null;
+    msg.is_file_encrypted = true;
 
     res.status(201).json(msg);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ─── POST /api/messages/decrypt-file ─────────────────────────────────────────
+// Decrypts an encrypted file and streams it back to the authorised user.
+// Only sender or receiver can decrypt.
+router.post('/decrypt-file', [body('messageId').isInt()], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+  const { messageId } = req.body;
+
+  try {
+    const [rows] = await pool.execute('SELECT * FROM messages WHERE id = ?', [messageId]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Message not found' });
+
+    const message = rows[0];
+
+    // Security: only sender or receiver
+    if (message.sender_id !== req.user.id && message.receiver_id !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    if (!message.file_url && !message.encryption_iv) {
+      return res.status(400).json({ error: 'No encrypted file attached' });
+    }
+
+    const filePath = path.join(__dirname, '..', 'uploads', message.file_url);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'File not found on server' });
+    }
+
+    // Read encrypted bytes and decrypt
+    const encryptedBuffer = fs.readFileSync(filePath);
+    const decryptedBuffer = decryptFile(encryptedBuffer, message.encryption_iv);
+
+    // Stream decrypted file back with correct headers
+    res.setHeader('Content-Type', message.file_mime_type || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(message.file_name)}"`);
+    res.setHeader('Content-Length', decryptedBuffer.length);
+    res.send(decryptedBuffer);
+
+  } catch (err) {
+    console.error('decrypt-file error:', err);
+    res.status(500).json({ error: 'Decryption failed' });
   }
 });
 
