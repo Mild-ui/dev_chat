@@ -1,5 +1,4 @@
 // src/components/chat/ChatWindow.js
-
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Shield, Wifi, WifiOff, X, Reply as ReplyIcon, Bell, BellOff } from 'lucide-react';
 import MessageBubble from './MessageBubble';
