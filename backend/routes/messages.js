@@ -52,7 +52,7 @@ router.get('/chats', async (req, res) => {
 
     res.json(chats);
   } catch (err) {
-    console.error(err);
+    console.error('CHATS ERROR:', err);
     res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
