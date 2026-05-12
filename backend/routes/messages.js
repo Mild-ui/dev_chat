@@ -31,32 +31,28 @@ router.get('/chats', async (req, res) => {
         m.file_name AS last_file_name,
         m.timestamp AS last_message_time,
         m.sender_id AS last_sender_id,
-        COUNT(CASE WHEN m2.is_read = 0 AND m2.receiver_id = ? THEN 1 END) AS unread_count
+        (
+          SELECT COUNT(*) FROM messages m2
+          WHERE m2.sender_id = u.id AND m2.receiver_id = ? AND m2.is_read = 0
+        ) AS unread_count
       FROM users u
-      INNER JOIN messages m ON (
-        (m.sender_id = ? AND m.receiver_id = u.id) OR
-        (m.sender_id = u.id AND m.receiver_id = ?)
-      )
-      LEFT JOIN messages m2 ON (
-        m2.sender_id = u.id AND m2.receiver_id = ? AND m2.is_read = 0
+      INNER JOIN messages m ON m.id = (
+        SELECT id FROM messages m3
+        WHERE (m3.sender_id = ? AND m3.receiver_id = u.id)
+           OR (m3.sender_id = u.id AND m3.receiver_id = ?)
+        ORDER BY m3.timestamp DESC
+        LIMIT 1
       )
       WHERE u.id != ?
-        AND m.timestamp = (
-          SELECT MAX(m3.timestamp) FROM messages m3
-          WHERE (m3.sender_id = ? AND m3.receiver_id = u.id)
-             OR (m3.sender_id = u.id AND m3.receiver_id = ?)
-        )
-      GROUP BY u.id
       ORDER BY m.timestamp DESC
-    `, [req.user.id, req.user.id, req.user.id, req.user.id, req.user.id, req.user.id, req.user.id]);
+    `, [req.user.id, req.user.id, req.user.id, req.user.id]);
 
     res.json(chats);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    console.error('CHATS ERROR:', err);
+    res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
-
 // ─── GET /api/messages/users ──────────────────────────────────────────────────
 router.get('/users', async (req, res) => {
   try {
@@ -66,7 +62,7 @@ router.get('/users', async (req, res) => {
     );
     res.json(users);
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
 
@@ -115,7 +111,7 @@ router.get('/:userId', [param('userId').isInt()], async (req, res) => {
     res.json(withUrls);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
 
@@ -244,7 +240,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     res.status(201).json(msg);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
 
@@ -332,7 +328,7 @@ router.patch('/read/:senderId', async (req, res) => {
     );
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
 
@@ -350,6 +346,6 @@ router.delete('/:id', async (req, res) => {
     await pool.execute('DELETE FROM messages WHERE id = ?', [req.params.id]);
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
