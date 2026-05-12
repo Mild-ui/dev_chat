@@ -59,6 +59,6 @@ const upload = multer({
 });
 
 
-const upload = multer({ storage, fileFilter, limits: { fileSize: MAX_FILE_SIZE } });
+
 
 module.exports = { upload, ALLOWED_TYPES };
