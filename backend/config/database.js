@@ -19,7 +19,7 @@ const pool = mysql.createPool({
   keepAliveInitialDelay: 0,
   // SSL for production (PlanetScale/Railway require it)
   ...(process.env.NODE_ENV === 'production' && {
-    ssl: { rejectUnauthorized: true }
+    ssl: { rejectUnauthorized: false }
   })
 });
 
