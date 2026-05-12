@@ -53,7 +53,7 @@ router.get('/chats', async (req, res) => {
     res.json(chats);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
 
@@ -66,7 +66,7 @@ router.get('/users', async (req, res) => {
     );
     res.json(users);
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
 
@@ -115,7 +115,7 @@ router.get('/:userId', [param('userId').isInt()], async (req, res) => {
     res.json(withUrls);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
 
@@ -244,7 +244,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     res.status(201).json(msg);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
 
@@ -332,7 +332,7 @@ router.patch('/read/:senderId', async (req, res) => {
     );
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
 
@@ -350,6 +350,6 @@ router.delete('/:id', async (req, res) => {
     await pool.execute('DELETE FROM messages WHERE id = ?', [req.params.id]);
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
