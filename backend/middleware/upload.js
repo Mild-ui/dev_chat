@@ -1,6 +1,6 @@
 const multer = require('multer');
-const {CloudinaryStorage}  = require('multer-storage-cloudinary');
-const { v2: cloudinary } = require('cloudinary');
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -24,19 +24,16 @@ const ALLOWED_TYPES = {
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 
+
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
-  params: async (req, file) => {
-    // Determine type
-    const isImage = file.mimetype.startsWith('image/');
-    
-    return {
-      folder: 'devchat',
-      resource_type: isImage ? 'image' : 'raw', // Critical for non-images
-      public_id: `${Date.now()}-${file.originalname.split('.')[0]}`, 
-    };
-  },
+  params: async (req, file) => ({
+    folder: 'devchat',
+    resource_type: file.mimetype.startsWith('image/') ? 'image' : 'raw',
+    public_id: `${Date.now()}-${Math.random().toString(36).substring(2)}`,
+  }),
 });
+
 
 
 const fileFilter = (req, file, cb) => {
