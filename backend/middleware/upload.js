@@ -1,3 +1,6 @@
+// middleware/upload.js
+// File uploads via Cloudinary (works on Render — no local disk needed)
+
 const multer = require('multer');
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const cloudinary = require('cloudinary').v2;
@@ -23,7 +26,7 @@ const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
 // Storage with optimization
 const storage = new CloudinaryStorage({
-  cloudinary: cloudinary,
+  cloudinary,
   params: async (req, file) => {
     const isImage = file.mimetype.startsWith('image/');
     const isVideo = file.mimetype.startsWith('video/');
