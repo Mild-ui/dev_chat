@@ -1,64 +1,58 @@
 const multer = require('multer');
-const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const cloudinary = require('cloudinary').v2;
 
-
-// 1. Configure Cloudinary
+// Configure Cloudinary
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key:    process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// 2. Allowed File Types
+// Allowed file types
 const ALLOWED_TYPES = {
-  'image/jpeg': 'jpg', 'image/png': 'png',
-  'image/gif': 'gif',  'image/webp': 'webp',
+  'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp',
   'application/pdf': 'pdf',
   'application/msword': 'doc',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
-  'application/vnd.ms-excel': 'xls',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
-  'text/plain': 'txt', 'text/csv': 'csv',
-  'application/json': 'json',
-  'application/zip': 'zip',
-  'application/x-zip-compressed': 'zip',
+  'text/plain': 'txt',
+  'video/mp4': 'mp4'
 };
 
-const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
-// 3. Set up Storage Engine
-// The constructor now correctly identifies CloudinaryStorage from the named export
+// Storage with optimization
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: async (req, file) => {
     const isImage = file.mimetype.startsWith('image/');
+    const isVideo = file.mimetype.startsWith('video/');
+    
     return {
-      folder: 'devchat',
-      // Cloudinary needs 'raw' for non-image files like PDF/DOCX
-      resource_type: isImage ? 'image' : 'raw', 
-      public_id: `${Date.now()}-${Math.random().toString(36).substring(2)}`,
+      folder: 'devchat_messages',
+      resource_type: isImage ? 'image' : (isVideo ? 'video' : 'raw'),
+      public_id: `${Date.now()}-${Math.random().toString(36).substring(2, 10)}`,
+      transformation: isImage ? [{ width: 1000, crop: 'limit', quality: 'auto' }] : undefined
     };
-  },
+  }
 });
 
-// 4. File Filter logic
+// File filter
 const fileFilter = (req, file, cb) => {
   if (ALLOWED_TYPES[file.mimetype]) {
     cb(null, true);
   } else {
-    cb(new Error(`File type ${file.mimetype} is not allowed`), false);
+    cb(new Error(`File type not allowed: ${file.mimetype}`), false);
   }
 };
 
-// 5. Export Multer Instance
 const upload = multer({ 
   storage: storage, 
   fileFilter: fileFilter, 
-  limits: { fileSize: MAX_FILE_SIZE } 
+  limits: { 
+    fileSize: MAX_FILE_SIZE,
+    files: 1 // Max 1 file per upload
+  } 
 });
-
-
-
 
 module.exports = { upload, ALLOWED_TYPES };

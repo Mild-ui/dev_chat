@@ -21,47 +21,59 @@ function fileUrl(req, filename) {
 }
 
 // ─── GET /api/messages/chats ──────────────────────────────────────────────────
+// ─── GET /api/messages/chats ──────────────────────────────────────────────────
 router.get('/chats', async (req, res) => {
   try {
     const [chats] = await pool.execute(`
-      SELECT
-        u.id, u.username, u.email, u.avatar_color, u.last_seen,
-        m.encrypted_message AS last_message,
-        m.message_type AS last_message_type,
-        m.file_name AS last_file_name,
-        m.timestamp AS last_message_time,
-        m.sender_id AS last_sender_id,
+      WITH latest_messages AS (
+        SELECT 
+          m.sender_id,
+          m.receiver_id,
+          m.encrypted_message,
+          m.message_type,
+          m.file_name,
+          m.timestamp,
+          m.id as message_id,
+          ROW_NUMBER() OVER (
+            PARTITION BY 
+              LEAST(m.sender_id, m.receiver_id),
+              GREATEST(m.sender_id, m.receiver_id)
+            ORDER BY m.timestamp DESC
+          ) as rn
+        FROM messages m
+        WHERE m.sender_id = ? OR m.receiver_id = ?
+      )
+      SELECT 
+        u.id, 
+        u.username, 
+        u.email, 
+        u.avatar_color, 
+        u.last_seen,
+        lm.encrypted_message AS last_message,
+        lm.message_type AS last_message_type,
+        lm.file_name AS last_file_name,
+        lm.timestamp AS last_message_time,
+        lm.sender_id AS last_sender_id,
         (
-          SELECT COUNT(*) FROM messages m2
-          WHERE m2.sender_id = u.id AND m2.receiver_id = ? AND m2.is_read = 0
+          SELECT COUNT(*) 
+          FROM messages m2
+          WHERE m2.sender_id = u.id 
+            AND m2.receiver_id = ? 
+            AND m2.is_read = 0
         ) AS unread_count
       FROM users u
-      INNER JOIN messages m ON m.id = (
-        SELECT id FROM messages m3
-        WHERE (m3.sender_id = ? AND m3.receiver_id = u.id)
-           OR (m3.sender_id = u.id AND m3.receiver_id = ?)
-        ORDER BY m3.timestamp DESC
-        LIMIT 1
+      INNER JOIN latest_messages lm ON (
+        (lm.sender_id = u.id AND lm.receiver_id = ?) OR
+        (lm.sender_id = ? AND lm.receiver_id = u.id)
       )
       WHERE u.id != ?
-      ORDER BY m.timestamp DESC
-    `, [req.user.id, req.user.id, req.user.id, req.user.id]);
+      AND lm.rn = 1
+      ORDER BY lm.timestamp DESC
+    `, [req.user.id, req.user.id, req.user.id, req.user.id, req.user.id, req.user.id]);
 
     res.json(chats);
   } catch (err) {
     console.error('CHATS ERROR:', err);
-    res.status(500).json({ error: 'Server error', detail: err.message });
-  }
-});
-// ─── GET /api/messages/users ──────────────────────────────────────────────────
-router.get('/users', async (req, res) => {
-  try {
-    const [users] = await pool.execute(
-      'SELECT id, username, email, avatar_color, last_seen FROM users WHERE id != ? ORDER BY username',
-      [req.user.id]
-    );
-    res.json(users);
-  } catch (err) {
     res.status(500).json({ error: 'Server error', detail: err.message });
   }
 });
