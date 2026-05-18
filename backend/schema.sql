@@ -1,15 +1,3 @@
--- ============================================================
--- DevChat Database Schema — v2 (with replies + file sharing)
--- MySQL 8.0+ compatible
--- Run: mysql -u root -p < backend/schema.sql
--- ============================================================
-
-CREATE DATABASE IF NOT EXISTS devchat
-  CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
-
-USE devchat;
-
 -- ─── users ───────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS users (
   id            INT UNSIGNED    NOT NULL AUTO_INCREMENT,
@@ -41,9 +29,6 @@ CREATE TABLE IF NOT EXISTS chats (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ─── messages ────────────────────────────────────────────────────────────────
--- reply_to_id  → self-referencing FK for threaded replies
--- message_type → 'text' | 'image' | 'file'
--- file_*       → metadata for attachments (stored in /uploads/ folder)
 CREATE TABLE IF NOT EXISTS messages (
   id                INT UNSIGNED    NOT NULL AUTO_INCREMENT,
   sender_id         INT UNSIGNED    NOT NULL,
